@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Review - review</title>
+<style>
+:root{--bg:#fafafa;--fg:#1c1c1e;--mute:#6b6b70;--card:#fff;--line:#d9d9de;--acc:#2358d6;--accfg:#fff;--warn:#b42318}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141416;--fg:#ececf0;--mute:#9a9aa3;--card:#1e1e22;--line:#34343a;--acc:#6e9bff;--accfg:#0b0b0d;--warn:#ff8a7a}}
+:root[data-theme="dark"]{--bg:#141416;--fg:#ececf0;--mute:#9a9aa3;--card:#1e1e22;--line:#34343a;--acc:#6e9bff;--accfg:#0b0b0d;--warn:#ff8a7a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:860px;margin:0 auto;padding:16px}
+h1{font-size:1.2rem;margin:0 0 4px}
+.sub{color:var(--mute);font-size:.9rem;margin:0 0 12px}
+.stage{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:8px;overflow:hidden}
+.stage iframe,.stage video{position:absolute;inset:0;width:100%;height:100%;border:0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0}
+button{font:inherit;padding:9px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+button.primary{background:var(--acc);color:var(--accfg);border-color:var(--acc);font-weight:600}
+button:focus-visible,textarea:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+button.small{padding:4px 9px;font-size:.85rem}
+.box{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;margin:12px 0}
+.box[hidden]{display:none}
+textarea,input[type=text]{width:100%;font:inherit;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}
+textarea{min-height:72px;resize:vertical}
+label{font-size:.85rem;color:var(--mute);display:block;margin-bottom:4px}
+.tfield{width:7.5em;font-variant-numeric:tabular-nums}
+ul{list-style:none;margin:0;padding:0}
+li.note{display:flex;gap:10px;padding:10px 0;border-top:1px solid var(--line);align-items:flex-start}
+li.note:first-child{border-top:0}
+li.note .when{flex:none;font-variant-numeric:tabular-nums;color:var(--acc);background:none;border:0;padding:0;font-weight:600}
+li.note .txt{flex:1;white-space:pre-wrap;word-break:break-word}
+li.note .acts{flex:none;display:flex;gap:6px}
+.hint{color:var(--mute);font-size:.85rem}
+#empty{color:var(--mute)}
+#status{color:var(--mute);font-size:.9rem}
+#playerr{color:var(--warn);font-size:.9rem}
+#out{font:13px/1.4 ui-monospace,Consolas,monospace;min-height:150px}
+kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-size:.85em}
+</style>
+</head>
+<body>
+<main>
+<h1>Review</h1>
+<p class="sub">Watch, and leave a note wherever you want something changed or have a thought. Press <kbd>N</kbd> to pause and write a note at the current time. Your notes are saved in this browser only.</p>
+
+<div class="stage" id="stage"><div id="yt"></div></div>
+<p id="playerr" hidden></p>
+
+<div class="row">
+  <button class="primary" id="addbtn" type="button">Note at current time (N)</button>
+  <span id="now" class="hint">0:00.0</span>
+</div>
+
+<div class="box" id="editor" hidden>
+  <label for="etime">Time (m:ss or m:ss.s) - change it if the video is not in the right place</label>
+  <input type="text" id="etime" class="tfield" inputmode="decimal" autocomplete="off">
+  <label for="etext" style="margin-top:10px">Your note</label>
+  <textarea id="etext" placeholder="What should change here?"></textarea>
+  <div class="row" style="margin-bottom:0">
+    <button class="primary" id="esave" type="button">Save note</button>
+    <button id="ecancel" type="button">Cancel</button>
+    <span class="hint">Enter saves, Shift+Enter new line, Esc cancels</span>
+  </div>
+</div>
+
+<div class="box">
+  <strong>Notes (<span id="count">0</span>)</strong>
+  <p id="empty">No notes yet.</p>
+  <ul id="list"></ul>
+</div>
+
+<div class="row">
+  <button class="primary" id="exportbtn" type="button">Export notes</button>
+  <span id="status" role="status"></span>
+</div>
+<div class="box" id="exportbox" hidden>
+  <label for="out">Copy this and send it back (it was also copied to your clipboard and saved as a file if your browser allowed it)</label>
+  <textarea id="out" readonly></textarea>
+</div>
+<p class="hint">No account needed. Nothing is uploaded; this page only talks to the video player.</p>
+</main>
+
+<script type="application/json" id="cfg">{"mode": "youtube", "youtube": "", "title": "Review", "cut_id": "hosted", "hosted": true}</script>
+<script>
+(function(){
+"use strict";
+var CFG = JSON.parse(document.getElementById("cfg").textContent);
+/* hosted mode: one generic page, the cut comes from ?v=<id>&t=<title>&id=<cut> */
+if (CFG.hosted) {
+  try {
+    var q = new URLSearchParams(location.search), qv = q.get("v") || "";
+    if (/^[A-Za-z0-9_-]{11}$/.test(qv)) {
+      CFG.youtube = qv;
+      CFG.title = (q.get("t") || "Review").slice(0, 120);
+      CFG.cut_id = (q.get("id") || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64) || qv;
+      document.title = CFG.title + " - review";
+      document.querySelector("h1").textContent = CFG.title;
+    }
+  } catch(e) {}
+}
+var KEY = "reviewnotes:" + CFG.cut_id;
+var $ = function(id){return document.getElementById(id);};
+var notes = [];
+var editingId = null;
+var player = null;
+
+/* ---- storage (may be unavailable) ---- */
+function load(){
+  try { var s = localStorage.getItem(KEY); if (s) { var a = JSON.parse(s); if (Array.isArray(a)) notes = a; } } catch(e) {}
+}
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(notes)); } catch(e) {} }
+
+/* ---- time helpers ---- */
+function fmt(t){
+  var ds = Math.round(Math.max(0, t) * 10);
+  var h = Math.floor(ds / 36000); ds -= h * 36000;
+  var m = Math.floor(ds / 600); ds -= m * 600;
+  var s = Math.floor(ds / 10), d = ds - s * 10;
+  var pad = function(n){return (n < 10 ? "0" : "") + n;};
+  return (h ? h + ":" + pad(m) : pad(m)) + ":" + pad(s) + "." + d;
+}
+function parseT(str){
+  var m = /^\s*(?:(\d+)\s*:\s*)?(\d+)\s*:\s*(\d+)(?:[.,](\d+))?\s*$/.exec(str);
+  if (m) {
+    var h = m[1] && m[3] !== undefined ? +m[1] : 0, mi = +m[2], se = +m[3];
+    return h * 3600 + mi * 60 + se + (m[4] ? parseFloat("0." + m[4]) : 0);
+  }
+  m = /^\s*(\d+(?:[.,]\d+)?)\s*$/.exec(str);
+  return m ? parseFloat(m[1].replace(",", ".")) : NaN;
+}
+
+/* ---- player abstraction ---- */
+function Html5(el){ this.el = el; }
+Html5.prototype.time = function(){ return this.el.currentTime || 0; };
+Html5.prototype.seek = function(t){ this.el.currentTime = t; };
+Html5.prototype.pause = function(){ this.el.pause(); };
+
+function Yt(){ this.p = null; this.ready = false; }
+Yt.prototype.time = function(){ try { return this.p && this.ready ? this.p.getCurrentTime() : 0; } catch(e) { return 0; } };
+Yt.prototype.seek = function(t){ try { this.p.seekTo(t, true); this.p.playVideo(); } catch(e) {} };
+Yt.prototype.pause = function(){ try { this.p.pauseVideo(); } catch(e) {} };
+
+function showPlayerErr(msg){
+  var e = $("playerr"); e.hidden = false; e.textContent = msg;
+}
+
+if (CFG.mode === "video") {
+  player = new Html5(document.getElementById("vid"));
+} else {
+  player = new Yt();
+  window.onYouTubeIframeAPIReady = function(){
+    player.p = new YT.Player("yt", {
+      videoId: CFG.youtube,
+      playerVars: {rel: 0, playsinline: 1, modestbranding: 1},
+      events: {
+        onReady: function(){ player.ready = true; },
+        onError: function(ev){
+          showPlayerErr("The embedded player could not load (code " + (ev && ev.data) + "). You can watch the video on YouTube in another tab and type the time into the note box yourself.");
+        }
+      }
+    });
+  };
+  var s = document.createElement("script");
+  s.src = "https://www.youtube.com/iframe_api";
+  s.onerror = function(){ showPlayerErr("Could not reach YouTube. Watch the video on YouTube in another tab and type the time into the note box yourself."); };
+  document.head.appendChild(s);
+}
+
+/* ---- notes UI ---- */
+function render(){
+  notes.sort(function(a, b){ return a.t - b.t || a.id - b.id; });
+  $("count").textContent = notes.length;
+  $("empty").hidden = notes.length > 0;
+  var ul = $("list"); ul.textContent = "";
+  notes.forEach(function(n){
+    var li = document.createElement("li"); li.className = "note";
+    var when = document.createElement("button"); when.type = "button"; when.className = "when";
+    when.textContent = fmt(n.t); when.title = "Jump to this time";
+    when.addEventListener("click", function(){ player.seek(n.t); });
+    var txt = document.createElement("div"); txt.className = "txt"; txt.textContent = n.text;
+    var acts = document.createElement("div"); acts.className = "acts";
+    var eb = document.createElement("button"); eb.type = "button"; eb.className = "small"; eb.textContent = "Edit";
+    eb.addEventListener("click", function(){ openEditor(n); });
+    var db = document.createElement("button"); db.type = "button"; db.className = "small"; db.textContent = "Delete";
+    db.addEventListener("click", function(){
+      notes = notes.filter(function(x){ return x.id !== n.id; });
+      if (editingId === n.id) closeEditor();
+      save(); render();
+    });
+    acts.appendChild(eb); acts.appendChild(db);
+    li.appendChild(when); li.appendChild(txt); li.appendChild(acts);
+    ul.appendChild(li);
+  });
+}
+function openEditor(n){
+  player.pause();
+  editingId = n ? n.id : null;
+  $("etime").value = fmt(n ? n.t : player.time());
+  $("etext").value = n ? n.text : "";
+  $("editor").hidden = false;
+  $("etext").focus();
+}
+function closeEditor(){ $("editor").hidden = true; editingId = null; }
+function commit(){
+  var text = $("etext").value.replace(/\s+$/, "").replace(/^\s+/, "");
+  var t = parseT($("etime").value);
+  if (isNaN(t)) { $("etime").focus(); $("etime").select(); return; }
+  if (!text) { $("etext").focus(); return; }
+  t = Math.round(t * 10) / 10;
+  if (editingId !== null) {
+    notes.forEach(function(n){ if (n.id === editingId) { n.t = t; n.text = text; } });
+  } else {
+    var id = notes.reduce(function(m, n){ return Math.max(m, n.id); }, 0) + 1;
+    notes.push({id: id, t: t, text: text});
+  }
+  save(); closeEditor(); render();
+}
+
+/* ---- export ---- */
+function exportText(){
+  var lines = ["REVIEW NOTES v1", "cut: " + CFG.cut_id, "title: " + CFG.title, "notes: " + notes.length, "---"];
+  notes.slice().sort(function(a, b){ return a.t - b.t || a.id - b.id; }).forEach(function(n){
+    lines.push("[" + fmt(n.t) + "] " + n.text.replace(/\s*[\r\n]+\s*/g, " "));
+  });
+  lines.push("--- end ---");
+  return lines.join("\n");
+}
+function exportJson(){
+  return JSON.stringify({
+    format: "review-notes", version: 1, cut: CFG.cut_id, title: CFG.title,
+    notes: notes.slice().sort(function(a, b){ return a.t - b.t || a.id - b.id; })
+      .map(function(n){ return {t: n.t, text: n.text}; })
+  }, null, 2);
+}
+function copyText(s){
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(s).then(function(){ return true; }, function(){ return false; });
+    }
+  } catch(e) {}
+  try { $("out").select(); return Promise.resolve(document.execCommand("copy")); } catch(e) {}
+  return Promise.resolve(false);
+}
+function download(name, s){
+  try {
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([s], {type: "application/json"}));
+    a.download = name;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    return true;
+  } catch(e) { return false; }
+}
+function doExport(){
+  if (!notes.length) { $("status").textContent = "Nothing to export yet."; return; }
+  var t = exportText();
+  $("out").value = t; $("exportbox").hidden = false;
+  window.__lastExport = t;
+  copyText(t).then(function(ok){
+    var d = download(CFG.cut_id + "-notes.json", exportJson());
+    $("status").textContent = (ok ? "Copied to clipboard. " : "Select and copy the text below. ") + (d ? "File saved." : "");
+  });
+}
+
+/* ---- wiring ---- */
+$("addbtn").addEventListener("click", function(){ openEditor(null); });
+$("esave").addEventListener("click", commit);
+$("ecancel").addEventListener("click", closeEditor);
+$("exportbtn").addEventListener("click", doExport);
+$("etext").addEventListener("keydown", function(e){
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commit(); }
+  else if (e.key === "Escape") { closeEditor(); }
+});
+$("etime").addEventListener("keydown", function(e){
+  if (e.key === "Enter") { e.preventDefault(); $("etext").focus(); }
+  else if (e.key === "Escape") { closeEditor(); }
+});
+document.addEventListener("keydown", function(e){
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  var tg = e.target && e.target.tagName;
+  if (tg === "INPUT" || tg === "TEXTAREA") return;
+  if (e.key === "n" || e.key === "N") { e.preventDefault(); openEditor(null); }
+});
+setInterval(function(){ $("now").textContent = fmt(player.time()); }, 250);
+
+load(); render();
+})();
+</script>
+</body>
+</html>
